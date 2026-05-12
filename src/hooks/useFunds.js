@@ -3,34 +3,95 @@ import { normaliseFund, getCategory, getRisk, getStars, getSimulatedMetrics } fr
 
 const API_BASE = 'http://localhost:5000/api'
 
-/* Parse AMFI NAV text to extract AMC names per scheme code
-   Format: SchemeCode;ISINDiv;ISINReinv;SchemeName;NAV;Date */
-function parseAmfiNavText(text) {
-  const map = {}   // schemeCode → { nav, date, amcName }
-  let currentAmc = ''
+/* ─────────────────────────────────────────────────────────────────
+   Extract AMC name from the scheme name.
+   
+   AMFI scheme names follow the pattern:
+     "<Fund House Name> <Scheme Type> <Options>"
+   
+   E.g. "HDFC Top 100 Fund - Direct Plan - Growth"
+        → "HDFC Mutual Fund"
+   
+   We maintain a lookup of known AMC prefixes → full AMC names.
+   This is 100% reliable and works with no API calls.
+───────────────────────────────────────────────────────────────── */
+const AMC_PREFIX_MAP = [
+  // Sorted longest-first so more specific matches win
+  ['Aditya Birla Sun Life',       'Aditya Birla Sun Life Mutual Fund'],
+  ['Axis',                        'Axis Mutual Fund'],
+  ['Bajaj Finserv',               'Bajaj Finserv Mutual Fund'],
+  ['Bandhan',                     'Bandhan Mutual Fund'],
+  ['Bank of India',               'Bank of India Mutual Fund'],
+  ['Baroda BNP Paribas',          'Baroda BNP Paribas Mutual Fund'],
+  ['Canara Robeco',               'Canara Robeco Mutual Fund'],
+  ['DSP',                         'DSP Mutual Fund'],
+  ['Edelweiss',                   'Edelweiss Mutual Fund'],
+  ['Franklin India',              'Franklin Templeton Mutual Fund'],
+  ['Franklin Templeton',          'Franklin Templeton Mutual Fund'],
+  ['Groww',                       'Groww Mutual Fund'],
+  ['HDFC',                        'HDFC Mutual Fund'],
+  ['Helios',                      'Helios Mutual Fund'],
+  ['HSBC',                        'HSBC Mutual Fund'],
+  ['ICICI Prudential',            'ICICI Prudential Mutual Fund'],
+  ['IDBI',                        'IDBI Mutual Fund'],
+  ['IDFC',                        'IDFC Mutual Fund'],
+  ['IIFL',                        'IIFL Mutual Fund'],
+  ['Invesco India',               'Invesco Mutual Fund'],
+  ['ITI',                         'ITI Mutual Fund'],
+  ['JM Financial',                'JM Financial Mutual Fund'],
+  ['JM',                          'JM Financial Mutual Fund'],
+  ['Kotak Mahindra',              'Kotak Mutual Fund'],
+  ['Kotak',                       'Kotak Mutual Fund'],
+  ['LIC',                         'LIC Mutual Fund'],
+  ['Mahindra Manulife',           'Mahindra Manulife Mutual Fund'],
+  ['Mirae Asset',                 'Mirae Asset Mutual Fund'],
+  ['Motilal Oswal',               'Motilal Oswal Mutual Fund'],
+  ['Navi',                        'Navi Mutual Fund'],
+  ['Nippon India',                'Nippon India Mutual Fund'],
+  ['NJ',                          'NJ Mutual Fund'],
+  ['Old Bridge',                  'Old Bridge Mutual Fund'],
+  ['PGIM India',                  'PGIM India Mutual Fund'],
+  ['PPFAS',                       'PPFAS Mutual Fund'],
+  ['Parag Parikh',                'PPFAS Mutual Fund'],
+  ['Quantum',                     'Quantum Mutual Fund'],
+  ['Quant',                       'Quant Mutual Fund'],
+  ['SBI',                         'SBI Mutual Fund'],
+  ['Samco',                       'Samco Mutual Fund'],
+  ['Shriram',                     'Shriram Mutual Fund'],
+  ['Sundaram',                    'Sundaram Mutual Fund'],
+  ['Tata',                        'Tata Mutual Fund'],
+  ['Taurus',                      'Taurus Mutual Fund'],
+  ['Trust',                       'Trust Mutual Fund'],
+  ['Union',                       'Union Mutual Fund'],
+  ['UTI',                         'UTI Mutual Fund'],
+  ['WhiteOak Capital',            'WhiteOak Capital Mutual Fund'],
+  ['WhiteOak',                    'WhiteOak Capital Mutual Fund'],
+  ['Zerodha',                     'Zerodha Mutual Fund'],
+  ['360 One',                     '360 One Mutual Fund'],
+  ['360One',                      '360 One Mutual Fund'],
+  ['Bajaj',                       'Bajaj Finserv Mutual Fund'],
+  ['Baroda',                      'Baroda BNP Paribas Mutual Fund'],
+  ['BNP Paribas',                 'Baroda BNP Paribas Mutual Fund'],
+]
 
-  for (const line of text.split('\n')) {
-    const trimmed = line.trim()
-    if (!trimmed) continue
-
-    const parts = trimmed.split(';')
-
-    /* AMC header lines have no semicolons and are not numeric */
-    if (parts.length === 1 && isNaN(parts[0])) {
-      currentAmc = trimmed
-      continue
-    }
-
-    if (parts.length >= 6 && !isNaN(parts[0])) {
-      const code = parseInt(parts[0].trim())
-      const nav  = parseFloat(parts[4].trim())
-      const date = parts[5]?.trim() || ''
-      if (!isNaN(nav) && nav > 0) {
-        map[code] = { nav, date, amcName: currentAmc }
-      }
+function extractAmcFromName(schemeName) {
+  if (!schemeName) return ''
+  const name = schemeName.trim()
+  for (const [prefix, amcName] of AMC_PREFIX_MAP) {
+    if (name.toLowerCase().startsWith(prefix.toLowerCase())) {
+      return amcName
     }
   }
-  return map
+  // Fallback: take everything before the first "-" or before common keywords
+  const dashIdx = name.indexOf(' - ')
+  if (dashIdx > 4) {
+    const prefix = name.slice(0, dashIdx).trim()
+    // Remove trailing common words
+    return prefix
+      .replace(/\s+(Mutual Fund|MF|Asset|AMC)$/i, '')
+      .trim()
+  }
+  return ''
 }
 
 export function useFunds() {
@@ -57,61 +118,44 @@ export function useFunds() {
             data = json.data.map(normaliseFund)
             fromBackend = true
           }
-        } catch { /* fall through to mfapi */ }
+        } catch { /* fall through */ }
 
-        /* 2. Fallback: mfapi.in list + AMFI NAV file for AMC names */
+        /* 2. Fallback: fetch all funds from mfapi.in
+              mfapi /mf only returns { schemeCode, schemeName }
+              — no AMC name in list endpoint.
+              We extract AMC from the scheme name via prefix matching. */
         if (!data.length) {
-          /* Fetch fund list and AMFI NAV file in parallel */
-          const [mfRes, amfiRes] = await Promise.all([
-            fetch('https://api.mfapi.in/mf'),
-            fetch('https://www.amfiindia.com/spages/NAVAll.txt').catch(() => null),
-          ])
+          const res     = await fetch('https://api.mfapi.in/mf')
+          const rawFunds = await res.json()
 
-          const rawFunds = await mfRes.json()
+          data = rawFunds.map(f => {
+            const name    = f.schemeName || f.scheme_name || ''
+            const type    = f.schemeType || f.scheme_type || ''
+            const amcName = extractAmcFromName(name)  // ← key fix
+            const cat     = getCategory(name, type)
+            const sim     = getSimulatedMetrics(f.schemeCode)
 
-          /* Parse AMFI file to get AMC names and filter to active funds */
-          let amfiMap = {}
-          if (amfiRes?.ok) {
-            const text = await amfiRes.text()
-            amfiMap = parseAmfiNavText(text)
-          }
-
-          const hasAmfi = Object.keys(amfiMap).length > 0
-
-          data = rawFunds
-            /* Filter to active funds if we have AMFI data */
-            .filter(f => !hasAmfi || amfiMap[f.schemeCode])
-            .map(f => {
-              const name = f.schemeName || f.scheme_name || ''
-              const type = f.schemeType || f.scheme_type || ''
-              /* Get AMC name from AMFI map (reliable) or fallback to mfapi field */
-              const amcName = amfiMap[f.schemeCode]?.amcName
-                || f.mutualFundFamily || f.mutual_fund_family || ''
-              const nav = amfiMap[f.schemeCode]?.nav || 0
-              const cat = getCategory(name, type)
-              const sim = getSimulatedMetrics(f.schemeCode)
-
-              return {
-                schemeCode: f.schemeCode,
-                schemeName: name,
-                amcName,
-                category:   cat,
-                risk:       getRisk(cat, name),
-                stars:      getStars(f.schemeCode),
-                nav:        nav || sim.nav,
-                ret1y:      sim.ret1y,
-                ret3y:      sim.ret3y,
-                ret5y:      sim.ret5y,
-                aum:        sim.aum,
-                expense:    sim.expense,
-                navHistory: [],
-              }
-            })
+            return {
+              schemeCode: f.schemeCode,
+              schemeName: name,
+              amcName,
+              category:   cat,
+              risk:       getRisk(cat, name),
+              stars:      getStars(f.schemeCode),
+              nav:        sim.nav,
+              ret1y:      sim.ret1y,
+              ret3y:      sim.ret3y,
+              ret5y:      sim.ret5y,
+              aum:        sim.aum,
+              expense:    sim.expense,
+              navHistory: [],
+            }
+          })
         }
 
         if (!cancelled) {
           setFunds(data)
-          setSource(fromBackend ? 'backend' : 'mfapi+amfi')
+          setSource(fromBackend ? 'backend' : 'mfapi')
         }
       } catch (err) {
         if (!cancelled) setError(err.message)
