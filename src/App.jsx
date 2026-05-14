@@ -64,6 +64,7 @@ export default function App() {
             onDetail={setModalFund} compareList={compareList} onCompare={handleCompare}
             presetAmc={exploreAmc} presetCat={exploreCat}
             onStatClick={handleStatClick}
+            onCalcReturns={handleCalcReturns}
           />
         </div>
         <div style={{ display: tab === 'fundhouses' ? 'block' : 'none' }}>
