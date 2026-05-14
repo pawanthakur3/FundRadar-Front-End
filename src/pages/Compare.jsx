@@ -6,9 +6,20 @@ export default function Compare({ compareList, onRemove }) {
   const slots = [0, 1, 2].map(i => compareList[i] || null)
 
   const best = (vals, higher = true) => {
-    const nums = vals.map(v => parseFloat(v))
-    const ext  = higher ? Math.max(...nums) : Math.min(...nums)
-    return nums.map(n => n === ext && isFinite(n))
+    const nums = vals.map(v => v !== null && v !== undefined ? parseFloat(v) : null)
+    const valid = nums.filter(n => n !== null && isFinite(n))
+    if (!valid.length) return nums.map(() => false)
+    const ext = higher ? Math.max(...valid) : Math.min(...valid)
+    return nums.map(n => n !== null && isFinite(n) && n === ext)
+  }
+
+  /* Helper — pick best Sharpe (higher is better, ignore nulls) */
+  const bestSharpe = (vals) => {
+    const nums = vals.map(v => v !== null && v !== undefined ? parseFloat(v) : null)
+    const valid = nums.filter(n => n !== null)
+    if (!valid.length) return nums.map(() => false)
+    const max = Math.max(...valid)
+    return nums.map(n => n !== null && n === max)
   }
 
   const rows = compareList.length ? [
@@ -21,6 +32,7 @@ export default function Compare({ compareList, onRemove }) {
     { label: 'AUM',           vals: compareList.map(f => `₹${f.aum.toLocaleString('en-IN')} Cr`) },
     { label: 'Expense ratio', vals: compareList.map(f => `${f.expense}%`), nums: compareList.map(f=>parseFloat(f.expense)), higher: false },
     { label: 'Star rating',   vals: compareList.map(f => <Stars n={f.stars} />), nums: compareList.map(f=>f.stars), higher: true },
+    { label: 'Sharpe ratio',  vals: compareList.map(f => f.returns?.sharpe ?? f.ret1y !== undefined ? (f.returns?.sharpe ?? '—') : '—'), nums: compareList.map(f => f.returns?.sharpe ?? null), higher: true },
     { label: 'Risk',          vals: compareList.map(f => <RiskPill r={f.risk} />) },
   ] : []
 
