@@ -43,7 +43,7 @@ const SUB_CAT_OPTIONS = {
   Other:  [],
 }
 
-export default function Explore({ funds, loading, error, stats, onDetail, compareList, onCompare, presetAmc, presetCat, onStatClick, onCalcReturns }) {
+export default function Explore({ funds, loading, error, stats, onDetail, compareList, onCompare, presetAmc, presetCat, onStatClick, onCalcReturns, watchCodes = [], onToggleWatch }) {
   const [search,  setSearch]  = useState('')
   const [cat,     setCat]     = useState('')
   const [subCat,  setSubCat]  = useState('')
@@ -219,7 +219,7 @@ export default function Explore({ funds, loading, error, stats, onDetail, compar
           <span style={{ fontSize: 13, color: 'var(--text2)', fontWeight: 500 }}>
             {loading ? 'Loading funds…' : `${total.toLocaleString('en-IN')} ${cat ? cat : 'active'} funds${subCat ? ` · ${subCat}` : ''}${search ? ` · "${search}"` : ''}`}
           </span>
-          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Click row for details · + Add to compare · ↗ Send to Returns calculator</span>
+          <span style={{ fontSize: 12, color: 'var(--text3)' }}>Click row · ★ Watchlist · + Compare · ↗ Returns</span>
         </div>
 
         {loading ? (
@@ -233,7 +233,7 @@ export default function Explore({ funds, loading, error, stats, onDetail, compar
             <table style={{ width: '100%', borderCollapse: 'collapse', minWidth: 900 }}>
               <thead>
                 <tr style={{ borderBottom: '1px solid var(--border)' }}>
-                  {['Fund name','Fund house','Category','NAV','1Y','3Y','5Y','Rating','Risk','Exp%','Compare','Returns'].map((h,i) => (
+                  {['Fund name','Fund house','Category','NAV','1Y','3Y','5Y','Rating','Risk','Exp%','Watch','Compare','Returns'].map((h,i) => (
                     <th key={i} style={{ padding: '9px 12px', textAlign: 'left', fontSize: 11, fontWeight: 600, color: 'var(--text3)', textTransform: 'uppercase', letterSpacing: 0.6, background: 'var(--bg3)', whiteSpace: 'nowrap' }}>{h}</th>
                   ))}
                 </tr>
@@ -260,6 +260,18 @@ export default function Explore({ funds, loading, error, stats, onDetail, compar
                     <td style={{ padding: '10px 12px' }}><Stars n={f.stars} /></td>
                     <td style={{ padding: '10px 12px' }}><RiskPill r={f.risk} /></td>
                     <td style={{ padding: '10px 12px', fontSize: 13, color: 'var(--text2)' }}>{f.expense}%</td>
+                    <td style={{ padding: '10px 12px' }} onClick={e => e.stopPropagation()}>
+                      <button
+                        onClick={() => onToggleWatch && onToggleWatch(f.schemeCode)}
+                        title={inW(f.schemeCode) ? 'Remove from watchlist' : 'Add to watchlist'}
+                        style={{
+                          padding: '4px 8px', borderRadius: 6, fontSize: 13, border: '1px solid',
+                          borderColor: inW(f.schemeCode) ? '#fbbf24' : 'var(--border2)',
+                          background: inW(f.schemeCode) ? 'rgba(251,191,36,0.12)' : 'transparent',
+                          color: inW(f.schemeCode) ? '#fbbf24' : 'var(--text3)',
+                          cursor: 'pointer', transition: 'all 0.15s', lineHeight: 1,
+                        }}>★</button>
+                    </td>
                     <td style={{ padding: '10px 12px' }} onClick={e => e.stopPropagation()}>
                       <button onClick={() => onCompare(f.schemeCode)} style={{
                         padding: '4px 10px', borderRadius: 6, fontSize: 11, fontWeight: 600, border: '1px solid',
