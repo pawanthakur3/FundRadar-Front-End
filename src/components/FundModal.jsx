@@ -56,7 +56,7 @@ function realHistory(navHistory = [], currentNav) {
 
 const HOLDINGS = ['HDFC Bank','Infosys','Reliance Industries','TCS','ICICI Bank','Axis Bank']
 
-export default function FundModal({ fund, onClose, onCompare, inCompare, onCalcReturns }) {
+export default function FundModal({ fund, onClose, onCompare, inCompare, onCalcReturns, isWatched = false, onToggleWatch }) {
   const [tab,       setTab]       = useState('nav')
   const [showBench, setShowBench] = useState(true)
   const overlayRef = useRef()
