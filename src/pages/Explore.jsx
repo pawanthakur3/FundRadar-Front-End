@@ -91,6 +91,7 @@ export default function Explore({ funds, loading, error, stats, onDetail, compar
   const pages = Math.ceil(total / PER)
   const slice = filtered.slice((page-1)*PER, page*PER)
   const inC   = code => compareList.some(x => x.schemeCode === code)
+  const inW   = code => watchCodes.includes(code)
 
   const chip = (label, active, onClick) => (
     <button onClick={onClick} style={{
